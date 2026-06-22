@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lake Schedule Logic Engine v20</title>
+    <title>Lake Schedule Logic Engine v23</title>
     <style>
         :root {
             --bg: #f4f7f6;
@@ -30,6 +30,15 @@
         }
 
         .header { text-align: center; margin-bottom: 20px; }
+        
+        .intro-box {
+            background: white; border-radius: 8px; padding: 25px 30px; margin: 0 auto 25px auto;
+            max-width: 900px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid var(--text-main);
+        }
+        .intro-box h3 { margin-top: 0; font-size: 1.4em; color: var(--text-main); margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .intro-box p { font-size: 0.95em; color: #444; line-height: 1.6; margin-bottom: 15px; }
+        .intro-box p:last-child { margin-bottom: 0; }
+        .intro-box strong { color: var(--text-main); font-size: 1.05em; }
 
         .controls {
             display: flex; justify-content: center; align-items: center; gap: 15px;
@@ -92,7 +101,7 @@
             border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow-x: auto;
         }
 
-        .stats-container h3 { margin-top: 0; border-bottom: 2px solid var(--peak-color); padding-bottom: 10px; }
+        .stats-container h3 { margin-top: 0; border-bottom: 2px solid var(--text-main); padding-bottom: 10px; }
         
         .projection-table { width: 100%; border-collapse: collapse; margin-top: 15px; min-width: 800px; }
         .projection-table th, .projection-table td { border: 1px solid #e0e0e0; padding: 8px 10px; text-align: center; font-size: 0.9em; }
@@ -105,8 +114,29 @@
 <body>
 
     <div class="header">
-        <h1>Lake Schedule Logic Engine v20</h1>
-        <p style="color: #7f8c8d; margin-top: -10px;">The 14-Day Phase-Synced Splice</p>
+        <h1>Lake Schedule Logic Engine</h1>
+        <p style="color: #7f8c8d; margin-top: -10px;">Official Schedule Generator & Tracker</p>
+    </div>
+    
+    <div class="intro-box">
+        <h3>How the Calendar Works</h3>
+        <p><strong>The Core Engine</strong><br>
+        The calendar follows an alternating weekly rotation between families. To ensure an equitable distribution of prime lake-house time, Memorial Day and Labor Day rotate together between families, while July 4th and Columbus Day rotate together between families. This creates a predictable long-term balance of major holidays and extended weekends.</p>
+
+        <p><strong>Bonus Weekend Rule</strong><br>
+        When Memorial Day falls on one of its latest possible dates, the weekend immediately preceding Memorial Day is awarded to the family that does not receive Memorial Day that year. This built-in adjustment helps balance weekend totals as the calendar naturally shifts between 20- and 21-weekend years.</p>
+
+        <p><strong>July 4th Priority Rule</strong><br>
+        July 4th is assigned using a celebration-based approach. If July 4th falls on a Monday or Tuesday, the family with July 4th priority receives the weekend immediately preceding the holiday. If July 4th falls on a Wednesday through Sunday, the family with July 4th priority receives the weekend containing or immediately following the holiday. This ensures the assigned family receives the most meaningful celebration period regardless of the day of the week on which July 4th falls.</p>
+
+        <p><strong>Summer Vacation Blocks</strong><br>
+        The calendar includes two alternating 14-day Summer Vacation Blocks. Using 14-day blocks instead of 10-day blocks keeps the schedule aligned with the weekly rotation, simplifies the balancing calculations, and prevents situations where a family could otherwise receive three consecutive weekends.</p>
+
+        <p><strong>Scheduling Safeguards</strong><br>
+        Three consecutive weekends assigned to the same family are not permitted. No stay will be scheduled for fewer than three nights.</p>
+
+        <p><strong>Automatic Balancing</strong><br>
+        Weekday totals may vary slightly due to holiday placement and calendar structure. The schedule allows for a difference of up to three days between families. If a family falls beyond that threshold, future schedules automatically restore balance through midweek allocations beginning in September. Over time, the calendar remains mathematically self-balancing.</p>
     </div>
 
     <div class="controls">
@@ -129,7 +159,7 @@
 
     <div class="stats-container">
         <h3>20-Year Proof Model (Anchored to 2024)</h3>
-        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>The 14-day stints perfectly read the July 4th shifts, guaranteeing no mega-streaks.</em></p>
+        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>The 14-day stints are seamlessly anchored to the third-to-last Monday in July.</em></p>
         <table class="projection-table">
             <thead>
                 <tr>
@@ -186,13 +216,12 @@
         return { start: addDays(j4, s), end: addDays(j4, e) };
     }
 
-    // Identifies the 2nd to last Monday in July for the 14-day stints
     function getPeakSummer(year) {
         let july31 = new Date(year, 6, 31);
         let offset = july31.getDay() === 0 ? 6 : july31.getDay() - 1;
         let lastMonday = addDays(july31, -offset);
         
-        let peak1Start = toUTC(addDays(lastMonday, -7)); // 2nd to last Monday
+        let peak1Start = toUTC(addDays(lastMonday, -14)); 
         let peak1End = peak1Start + (14 * msPerDay);
         let peak2Start = peak1End;
         let peak2End = peak2Start + (14 * msPerDay);
@@ -288,7 +317,6 @@
         const hasFlip = (j4ColOwner !== originalSatOwner); 
         const flipDate = addDays(j4Sat, 2); 
         
-        // Context-Aware Assignment: Check natural owner AND apply July 4th flip if necessary
         let peak1Fam = getStrictBaseOwner(peaks.peak1Start, year); 
         if (hasFlip && peaks.peak1Start >= toUTC(flipDate)) {
             peak1Fam = (peak1Fam === 'R') ? 'J' : 'R';
@@ -310,7 +338,6 @@
 
             if (utc >= seasonStartUTC && utc < toUTC(colDay)) {
                 
-                // 1. The 14-Day Stints
                 if (utc >= peaks.peak1Start && utc < peaks.peak2Start) {
                     owner = peak1Fam;
                     label = '14-Day Blk';
@@ -318,13 +345,11 @@
                     owner = peak2Fam;
                     label = '14-Day Blk';
                 } 
-                // 2. Early Bird / Memorial Week
                 else if (isLateMemorialDay && utc >= earlyBirdStart && utc < anchor) {
                     owner = j4ColOwner; label = 'Early Bird';
                 } else if (utc >= anchor && utc < toUTC(memDay)) {
                     owner = memLabOwner; label = 'Memorial Week';
                 } 
-                // 3. Normal Base Rotation + Overrides
                 else {
                     let currentBaseOwner = getStrictBaseOwner(utc, year);
                     if (hasFlip && utc >= toUTC(flipDate)) {
