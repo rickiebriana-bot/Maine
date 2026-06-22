@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lake Schedule Logic Engine v14 (The 3-Day Constraint)</title>
+    <style>
+        :root {
+            --bg: #f4f7f6;
+            --r-bg: #fadbd8;
+            --r-text: #c0392b;
+            --j-bg: #d5f5e3;
+            --j-text: #27ae60;
+            --off-bg: #eaeded;
+            --off-text: #bdc3c7;
+            --override-color: #f39c12;
+            --cap-color: #3498db;
+            --day-fix-color: #8e44ad;
+            --early-bird-color: #1abc9c;
+            --text-main: #2c3e50;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .header { text-align: center; margin-bottom: 20px; }
+
+        .controls {
+            display: flex; justify-content: center; align-items: center; gap: 15px;
+            margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05); max-width: 400px; margin: 0 auto;
+        }
+
+        select { padding: 8px 12px; font-size: 1.1em; border: 1px solid #ccc; border-radius: 5px; }
+
+        .legend {
+            display: flex; flex-wrap: wrap; justify-content: center; gap: 15px;
+            margin-bottom: 30px; font-size: 0.85em; max-width: 1000px; margin: 20px auto;
+        }
+
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .color-box { width: 20px; height: 20px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1); }
+
+        .calendar-container {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px; max-width: 1200px; margin: 0 auto;
+        }
+
+        .month-card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .month-title { text-align: center; margin-top: 0; margin-bottom: 15px; color: var(--text-main); }
+
+        .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .day-header { text-align: center; font-weight: bold; font-size: 0.8em; color: #7f8c8d; padding-bottom: 5px; }
+
+        .day {
+            aspect-ratio: 1; display: flex; flex-direction: column; border-radius: 6px;
+            position: relative; background-color: var(--off-bg); border: 1px solid rgba(0,0,0,0.05); overflow: hidden;
+        }
+
+        .day.override-border { box-shadow: inset 0 0 0 2px var(--override-color); }
+        .day.cap-border { box-shadow: inset 0 0 0 2.5px var(--cap-color); }
+        .day.fix-border { box-shadow: inset 0 0 0 2.5px var(--day-fix-color); }
+        .day.early-border { box-shadow: inset 0 0 0 2px var(--early-bird-color); }
+
+        .day-number { position: absolute; top: 4px; left: 6px; font-size: 0.75em; color: #555; z-index: 2; }
+
+        .content-center {
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            height: 100%; width: 100%; z-index: 1;
+        }
+
+        .holiday-label {
+            position: absolute; bottom: 3px; width: 100%; text-align: center; font-size: 0.55em;
+            text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; z-index: 2;
+        }
+        
+        .holiday-label.override { color: #d35400; }
+        .holiday-label.cap { color: var(--cap-color); }
+        .holiday-label.fix { color: var(--day-fix-color); }
+        .holiday-label.early { color: var(--early-bird-color); }
+
+        .stats-container {
+            max-width: 1000px; margin: 40px auto 0 auto; background: white; padding: 25px;
+            border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow-x: auto;
+        }
+
+        .stats-container h3 { margin-top: 0; border-bottom: 2px solid var(--day-fix-color); padding-bottom: 10px; }
+        
+        .projection-table { width: 100%; border-collapse: collapse; margin-top: 15px; min-width: 800px; }
+        .projection-table th, .projection-table td { border: 1px solid #e0e0e0; padding: 8px 10px; text-align: center; font-size: 0.9em; }
+        .projection-table th { background-color: #f8f9fa; color: #555; }
+        .projection-table tr:hover { background-color: #f1f4f5; }
+        .divider-left { border-left: 2px solid #ccc !important; }
+
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Lake Schedule Logic Engine v14</h1>
+        <p style="color: #7f8c8d; margin-top: -10px;">The Unbreakable 3-Day Block Constraint</p>
+    </div>
+
+    <div class="controls">
+        <label for="yearSelect"><strong>Select Season:</strong></label>
+        <select id="yearSelect"></select>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="color-box" style="background: var(--r-bg)"></div> R Full Day</div>
+        <div class="legend-item"><div class="color-box" style="background: var(--j-bg)"></div> J Full Day</div>
+        <div class="legend-item"><div class="color-box" style="background: linear-gradient(135deg, var(--r-bg) 49%, #aaa 50%, var(--j-bg) 51%)"></div> Transfer</div>
+        <div class="legend-item"><div class="color-box" style="border: 2px solid var(--override-color); background: white;"></div> Holiday Block</div>
+        <div class="legend-item"><div class="color-box" style="border: 2px solid var(--early-bird-color); background: white;"></div> Early Bird</div>
+        <div class="legend-item"><div class="color-box" style="border: 2px solid var(--cap-color); background: white;"></div> Wknd Gov</div>
+        <div class="legend-item"><div class="color-box" style="border: 2px solid var(--day-fix-color); background: white;"></div> Day Eq.</div>
+    </div>
+
+    <div class="calendar-container" id="calendar"></div>
+
+    <div class="stats-container">
+        <h3>20-Year Proof Model (Anchored to 2024)</h3>
+        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>Day Equalizer will now carry drift to the next year if a 3-day block minimum cannot be maintained.</em></p>
+        <table class="projection-table">
+            <thead>
+                <tr>
+                    <th>Season</th>
+                    <th class="divider-left">R Sats</th>
+                    <th>J Sats</th>
+                    <th>Sat Diff</th>
+                    <th style="background-color: #eaf2f8;">Cum. Sat Drift</th>
+                    <th class="divider-left">R Total Days</th>
+                    <th>J Total Days</th>
+                    <th>Day Diff</th>
+                    <th style="background-color: #f4f6f7;">Cum. Day Drift</th>
+                </tr>
+            </thead>
+            <tbody id="projection-body"></tbody>
+        </table>
+    </div>
+
+<script>
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const EPOCH_YEAR = 2024; 
+    
+    function toUTC(d) { return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()); }
+    function addDays(d, days) { let nd = new Date(d); nd.setDate(nd.getDate() + days); return nd; }
+
+    function getMemorialDay(year) {
+        let d = new Date(year, 4, 31); 
+        let offset = d.getDay() === 0 ? 6 : d.getDay() - 1; 
+        return addDays(d, -offset);
+    }
+    function getLaborDay(year) {
+        let d = new Date(year, 8, 1); 
+        let offset = d.getDay() === 1 ? 0 : (d.getDay() === 0 ? 1 : 8 - d.getDay());
+        return addDays(d, offset);
+    }
+    function getColumbusDay(year) {
+        let d = new Date(year, 9, 1); 
+        let offset = d.getDay() === 1 ? 0 : (d.getDay() === 0 ? 1 : 8 - d.getDay());
+        return addDays(d, offset + 7);
+    }
+    function getJuly4Block(year) {
+        let j4 = new Date(year, 6, 4);
+        let s, e;
+        switch(j4.getDay()) {
+            case 0: s = -2; e = 1; break; 
+            case 1: s = -3; e = 1; break; 
+            case 2: s = -4; e = 1; break; 
+            case 3: s = -1; e = 4; break; 
+            case 4: s = -1; e = 3; break; 
+            case 5: s = -1; e = 3; break; 
+            case 6: s = -1; e = 2; break; 
+        }
+        return { start: addDays(j4, s), end: addDays(j4, e) };
+    }
+
+    function getStrictBaseOwner(utcTime, year) {
+        const memDay = getMemorialDay(year);
+        const anchor = toUTC(addDays(memDay, -7)); 
+        const memLabOwner = (year % 2 === 0) ? 'R' : 'J';
+        const firstBaseOwner = memLabOwner; 
+        let diff = Math.floor((utcTime - anchor) / msPerDay);
+        let weeks = Math.floor(diff / 7);
+        return (weeks % 2 === 0) ? firstBaseOwner : (firstBaseOwner === 'R' ? 'J' : 'R');
+    }
+
+    function generateNaturalSeason(year) {
+        let memDay = getMemorialDay(year);
+        let anchor = toUTC(addDays(memDay, -7)); 
+        let labDay = getLaborDay(year);
+        let labStart = addDays(labDay, -3); 
+        let colDay = getColumbusDay(year);
+        let colStart = addDays(colDay, -3); 
+        let j4 = getJuly4Block(year);
+
+        let memLabOwner = (year % 2 === 0) ? 'R' : 'J';
+        let j4ColOwner = (year % 2 === 0) ? 'J' : 'R';
+
+        let j4Sat = new Date(j4.start);
+        while (j4Sat.getDay() !== 6) j4Sat = addDays(j4Sat, 1);
+        const originalSatOwner = getStrictBaseOwner(toUTC(j4Sat), year);
+        const hasFlip = (j4ColOwner !== originalSatOwner); 
+        const flipDate = addDays(j4Sat, 2); 
+
+        let season = { nights: {}, labels: {} };
+        
+        let isLateMemorialDay = memDay.getDate() >= 28;
+        let earlyBirdStart = toUTC(addDays(new Date(anchor), -3)); 
+        
+        let seasonStartUTC = isLateMemorialDay ? earlyBirdStart : anchor; 
+        let renderStartUTC = toUTC(addDays(new Date(seasonStartUTC), -4)); 
+        let endUTC = toUTC(addDays(colDay, 10)); 
+
+        for (let utc = renderStartUTC; utc <= endUTC; utc += msPerDay) {
+            let owner = 'OFF';
+            let label = null;
+
+            if (utc >= seasonStartUTC && utc < toUTC(colDay)) {
+                if (isLateMemorialDay && utc >= earlyBirdStart && utc < anchor) {
+                    owner = j4ColOwner;
+                    label = 'Early Bird';
+                } else if (utc >= anchor && utc < toUTC(memDay)) {
+                    owner = memLabOwner;
+                    label = 'Memorial Week';
+                } else {
+                    let currentBaseOwner = getStrictBaseOwner(utc, year);
+                    if (hasFlip && utc >= toUTC(flipDate)) {
+                        currentBaseOwner = (currentBaseOwner === 'R') ? 'J' : 'R';
+                    }
+                    owner = currentBaseOwner;
+
+                    if (utc >= toUTC(labStart) && utc < toUTC(labDay)) { owner = memLabOwner; label = 'Labor Day'; }
+                    else if (utc >= toUTC(colStart) && utc < toUTC(colDay)) { owner = j4ColOwner; label = 'Columbus Day'; }
+                    else if (utc >= toUTC(j4.start) && utc < toUTC(j4.end)) { owner = j4ColOwner; label = 'July 4th'; }
+                }
+            }
+            season.nights[utc] = owner;
+            if (label) season.labels[utc] = label;
+        }
+        return season;
+    }
+
+    function calcStats(season, year) {
+        let rDays = 0, jDays = 0, rSat = 0, jSat = 0;
+        
+        let memDay = getMemorialDay(year);
+        let anchor = toUTC(addDays(memDay, -7));
+        let isLateMemorialDay = memDay.getDate() >= 28;
+        let earlyBirdStart = toUTC(addDays(new Date(anchor), -3));
+        
+        let seasonStartUTC = isLateMemorialDay ? earlyBirdStart : anchor; 
+        let seasonEndUTC = toUTC(getColumbusDay(year));
+
+        let bounds = Object.keys(season.nights).map(Number).sort((a,b)=>a-b);
+        for(let i=1; i<bounds.length; i++) {
+            let utc = bounds[i];
+            let prevUtc = bounds[i-1];
+
+            if (utc >= seasonStartUTC && utc <= seasonEndUTC) {
+                let morning = season.nights[prevUtc];
+                let evening = season.nights[utc];
+
+                if (morning === 'R') rDays += 0.5;
+                if (morning === 'J') jDays += 0.5;
+                if (evening === 'R') rDays += 0.5;
+                if (evening === 'J') jDays += 0.5;
+
+                let d = new Date(utc);
+                if (d.getUTCDay() === 6) { 
+                    if (evening === 'R') rSat++;
+                    if (evening === 'J') jSat++;
+                }
+            }
+        }
+        return { rDays, jDays, rSat, jSat };
+    }
+
+    // Helper: Validates that flipping a day won't create a micro-block (< 3 days)
+    function isValidFlip(season, testUtc, offendingFam, trailingFam, seasonStartUTC, seasonEndUTC) {
+        let originalOwner = season.nights[testUtc];
+        if (originalOwner !== offendingFam) return false;
+
+        // Temporarily apply the flip
+        season.nights[testUtc] = trailingFam;
+
+        let valid = true;
+
+        // Check the left-side remainder block of the offending family
+        let leftUtc = testUtc - msPerDay;
+        if (season.nights[leftUtc] === offendingFam) {
+            let len = 0;
+            let cur = leftUtc;
+            while (season.nights[cur] === offendingFam && cur >= seasonStartUTC) { len++; cur -= msPerDay; }
+            if (len < 3) valid = false;
+        }
+
+        // Check the right-side remainder block of the offending family
+        let rightUtc = testUtc + msPerDay;
+        if (valid && season.nights[rightUtc] === offendingFam) {
+            let len = 0;
+            let cur = rightUtc;
+            while (season.nights[cur] === offendingFam && cur <= seasonEndUTC) { len++; cur += msPerDay; }
+            if (len < 3) valid = false;
+        }
+
+        // Check the newly expanded block of the trailing family
+        if (valid) {
+            let len = 0;
+            let cur = testUtc;
+            while (season.nights[cur] === trailingFam && cur >= seasonStartUTC) { len++; cur -= msPerDay; }
+            cur = testUtc + msPerDay;
+            while (season.nights[cur] === trailingFam && cur <= seasonEndUTC) { len++; cur += msPerDay; }
+            if (len < 3) valid = false;
+        }
+
+        // Revert the temporary flip
+        season.nights[testUtc] = originalOwner;
+        return valid;
+    }
+
+    const masterSchedule = {};
+    const cumulativeMath = {};
+
+    function buildHistoryEngine() {
+        let runningSatDrift = 0; 
+        let runningDayDrift = 0;
+
+        for (let y = EPOCH_YEAR; y <= 2045; y++) {
+            let season = generateNaturalSeason(y);
+            let stats = calcStats(season, y);
+            
+            // --- 1. THE WEEKEND GOVERNOR ---
+            let currentSatDiff = stats.rSat - stats.jSat;
+            let projectedSatDrift = runningSatDrift + currentSatDiff;
+
+            if (projectedSatDrift >= 2 || projectedSatDrift <= -2) {
+                let offendingFam = projectedSatDrift >= 2 ? 'R' : 'J';
+                let trailingFam = offendingFam === 'R' ? 'J' : 'R';
+                
+                let colDay = getColumbusDay(y);
+                let d = addDays(colDay, -7); 
+                
+                while (toUTC(d) > toUTC(getMemorialDay(y))) {
+                    if (d.getDay() === 6) { 
+                        let satUtc = toUTC(d);
+                        let friUtc = satUtc - msPerDay; 
+                        
+                        if (season.nights[satUtc] === offendingFam && !season.labels[satUtc]) {
+                            season.nights[friUtc] = trailingFam;
+                            season.nights[satUtc] = trailingFam;
+                            season.labels[friUtc] = 'Wknd Gov';
+                            season.labels[satUtc] = 'Wknd Gov';
+                            break; 
+                        }
+                    }
+                    d = addDays(d, -1);
+                }
+                stats = calcStats(season, y);
+            }
+
+            // --- 2. THE WEEKDAY SHOCK ABSORBER (WITH 3-DAY SAFEGUARD) ---
+            let currentDayDiff = stats.rDays - stats.jDays;
+            let projectedDayDrift = runningDayDrift + currentDayDiff;
+            
+            let memDay = getMemorialDay(y);
+            let anchor = toUTC(addDays(memDay, -7));
+            let isLateMemorialDay = memDay.getDate() >= 28;
+            let seasonStartUTC = isLateMemorialDay ? toUTC(addDays(new Date(anchor), -3)) : anchor;
+            let seasonEndUTC = toUTC(getColumbusDay(y));
+
+            while (projectedDayDrift > 1.5 || projectedDayDrift < -1.5) {
+                let offendingFam = projectedDayDrift > 0 ? 'R' : 'J';
+                let trailingFam = offendingFam === 'R' ? 'J' : 'R';
+                let flipped = false;
+
+                let colDay = getColumbusDay(y);
+                let searchD = addDays(colDay, -7);
+
+                while (toUTC(searchD) > toUTC(new Date(y, 8, 1))) { 
+                    let utc = toUTC(searchD);
+                    let dayOfWeek = searchD.getDay();
+
+                    // Focus on non-weekends that don't have existing holiday/governor labels
+                    if (dayOfWeek !== 5 && dayOfWeek !== 6) {
+                        if (season.nights[utc] === offendingFam && !season.labels[utc]) {
+                            
+                            // Prevent micro-blocks (must leave blocks >= 3 days)
+                            if (isValidFlip(season, utc, offendingFam, trailingFam, seasonStartUTC, seasonEndUTC)) {
+                                season.nights[utc] = trailingFam;
+                                season.labels[utc] = 'Day Eq.';
+                                flipped = true;
+                                break; 
+                            }
+                        }
+                    }
+                    searchD = addDays(searchD, -1);
+                }
+
+                // If we iterated through September and couldn't find a safe day to flip, we stop! 
+                // The math naturally defers to the next year.
+                if (!flipped) break; 
+
+                stats = calcStats(season, y);
+                currentDayDiff = stats.rDays - stats.jDays;
+                projectedDayDrift = runningDayDrift + currentDayDiff;
+            }
+
+            runningSatDrift += (stats.rSat - stats.jSat);
+            runningDayDrift += (stats.rDays - stats.jDays);
+
+            masterSchedule[y] = season;
+            cumulativeMath[y] = { 
+                stats: stats, 
+                satDiff: (stats.rSat - stats.jSat), 
+                cumSat: runningSatDrift,
+                dayDiff: (stats.rDays - stats.jDays),
+                cumDay: runningDayDrift
+            };
+        }
+    }
+
+    buildHistoryEngine();
+
+    // --- UI RENDERING ---
+    const colors = { 'R': '#fadbd8', 'J': '#d5f5e3', 'OFF': '#eaeded' };
+    const textColors = { 'R': '#c0392b', 'J': '#27ae60', 'OFF': '#bdc3c7' };
+    const months = ["May", "June", "July", "August", "September", "October"];
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    function renderApp(selectedYear) {
+        const container = document.getElementById('calendar');
+        container.innerHTML = '';
+        const season = masterSchedule[selectedYear];
+        
+        for (let monthIdx = 4; monthIdx <= 9; monthIdx++) {
+            const monthCard = document.createElement('div');
+            monthCard.className = 'month-card';
+            monthCard.innerHTML = `<h3 class="month-title">${months[monthIdx - 4]}</h3>`;
+            
+            const grid = document.createElement('div');
+            grid.className = 'grid';
+            dayNames.forEach(d => grid.innerHTML += `<div class="day-header">${d}</div>`);
+
+            const firstDay = new Date(selectedYear, monthIdx, 1);
+            const lastDay = new Date(selectedYear, monthIdx + 1, 0);
+            
+            for (let i = 0; i < firstDay.getDay(); i++) grid.appendChild(document.createElement('div'));
+
+            for (let d = 1; d <= lastDay.getDate(); d++) {
+                const utc = toUTC(new Date(selectedYear, monthIdx, d));
+                const prevUtc = utc - msPerDay;
+                
+                const m = season.nights[prevUtc] || 'OFF';
+                const e = season.nights[utc] || 'OFF';
+                
+                const dayDiv = document.createElement('div');
+                dayDiv.className = 'day';
+
+                if (m === e) dayDiv.style.backgroundColor = colors[m];
+                else dayDiv.style.background = `linear-gradient(135deg, ${colors[m]} 48%, #bbb 50%, ${colors[e]} 52%)`;
+
+                let innerHTML = `<div class="day-number">${d}</div>`;
+                let content = '';
+
+                if (m === e) {
+                    if (m !== 'OFF') content = `<div style="font-weight:bold; font-size:1.4em; color:${textColors[m]}">${m}</div>`;
+                } else {
+                    let mText = m === 'OFF' ? 'IN' : `<span style="color:${textColors[m]}">${m}</span>`;
+                    let eText = e === 'OFF' ? 'OUT' : `<span style="color:${textColors[e]}">${e}</span>`;
+                    content = `<div style="font-size:0.9em; font-weight:bold;">${mText} &rarr; ${eText}</div>`;
+                }
+                
+                innerHTML += `<div class="content-center">${content}</div>`;
+
+                let label = season.labels[utc];
+                if (label && (m !== 'OFF' || e !== 'OFF')) {
+                    let labelClass = 'override';
+                    let borderClass = 'override-border';
+                    
+                    if (label === 'Wknd Gov') { labelClass = 'cap'; borderClass = 'cap-border'; }
+                    if (label === 'Day Eq.') { labelClass = 'fix'; borderClass = 'fix-border'; }
+                    if (label === 'Early Bird') { labelClass = 'early'; borderClass = 'early-border'; }
+                    
+                    innerHTML += `<div class="holiday-label ${labelClass}">${label}</div>`;
+                    dayDiv.classList.add(borderClass);
+                }
+
+                dayDiv.innerHTML = innerHTML;
+                grid.appendChild(dayDiv);
+            }
+            monthCard.appendChild(grid);
+            container.appendChild(monthCard);
+        }
+
+        const tbody = document.getElementById('projection-body');
+        tbody.innerHTML = '';
+        
+        for(let y = selectedYear; y <= selectedYear + 12; y++) {
+            if (!cumulativeMath[y]) break;
+            
+            let data = cumulativeMath[y];
+            
+            let ySatStr = data.satDiff === 0 ? 'Even' : (data.satDiff > 0 ? `<span style="color:#c0392b">+${data.satDiff} (R)</span>` : `<span style="color:#27ae60">+${Math.abs(data.satDiff)} (J)</span>`);
+            let cumSatStr = data.cumSat === 0 ? '0' : (data.cumSat > 0 ? `<span style="color:#c0392b">+${data.cumSat} (R)</span>` : `<span style="color:#27ae60">+${Math.abs(data.cumSat)} (J)</span>`);
+            
+            let yDayStr = data.dayDiff === 0 ? 'Even' : (data.dayDiff > 0 ? `<span style="color:#c0392b">+${data.dayDiff} (R)</span>` : `<span style="color:#27ae60">+${Math.abs(data.dayDiff)} (J)</span>`);
+            let cumDayStr = data.cumDay === 0 ? '0' : (data.cumDay > 0 ? `<span style="color:#c0392b">+${data.cumDay} (R)</span>` : `<span style="color:#27ae60">+${Math.abs(data.cumDay)} (J)</span>`);
+
+            let tr = document.createElement('tr');
+            if(y === selectedYear) tr.style.backgroundColor = '#fffbea'; 
+            tr.innerHTML = `
+                <td><strong>${y} ${y === selectedYear ? '(Selected)' : ''}</strong></td>
+                <td class="divider-left">${data.stats.rSat}</td>
+                <td>${data.stats.jSat}</td>
+                <td>${ySatStr}</td>
+                <td style="background-color: #eaf2f8;"><strong>${cumSatStr}</strong></td>
+                <td class="divider-left">${data.stats.rDays}</td>
+                <td>${data.stats.jDays}</td>
+                <td>${yDayStr}</td>
+                <td style="background-color: #f4f6f7;"><strong>${cumDayStr}</strong></td>
+            `;
+            tbody.appendChild(tr);
+        }
+    }
+
+    const currentYear = new Date().getFullYear();
+    const select = document.getElementById('yearSelect');
+    
+    for (let y = 2024; y <= 2040; y++) {
+        let opt = document.createElement('option');
+        opt.value = y;
+        opt.innerText = y;
+        if (y === currentYear) opt.selected = true;
+        select.appendChild(opt);
+    }
+
+    select.addEventListener('change', (e) => renderApp(parseInt(e.target.value)));
+    renderApp(currentYear);
+
+</script>
+</body>
+</html>
