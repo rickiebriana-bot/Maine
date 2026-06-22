@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lake Schedule Logic Engine v15</title>
+    <title>Lake Schedule Logic Engine v17</title>
     <style>
         :root {
             --bg: #f4f7f6;
@@ -17,6 +17,7 @@
             --cap-color: #3498db;
             --day-fix-color: #8e44ad;
             --early-bird-color: #1abc9c;
+            --peak-color: #e84393;
             --text-main: #2c3e50;
         }
 
@@ -40,7 +41,7 @@
 
         .legend {
             display: flex; flex-wrap: wrap; justify-content: center; gap: 15px;
-            margin-bottom: 30px; font-size: 0.85em; max-width: 1000px; margin: 20px auto;
+            margin-bottom: 30px; font-size: 0.85em; max-width: 1100px; margin: 20px auto;
         }
 
         .legend-item { display: flex; align-items: center; gap: 6px; }
@@ -66,6 +67,7 @@
         .day.cap-border { box-shadow: inset 0 0 0 2.5px var(--cap-color); }
         .day.fix-border { box-shadow: inset 0 0 0 2.5px var(--day-fix-color); }
         .day.early-border { box-shadow: inset 0 0 0 2px var(--early-bird-color); }
+        .day.peak-border { box-shadow: inset 0 0 0 2px var(--peak-color); }
 
         .day-number { position: absolute; top: 4px; left: 6px; font-size: 0.75em; color: #555; z-index: 2; }
 
@@ -75,7 +77,7 @@
         }
 
         .holiday-label {
-            position: absolute; bottom: 3px; width: 100%; text-align: center; font-size: 0.55em;
+            position: absolute; bottom: 3px; width: 100%; text-align: center; font-size: 0.52em;
             text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; z-index: 2;
         }
         
@@ -83,13 +85,14 @@
         .holiday-label.cap { color: var(--cap-color); }
         .holiday-label.fix { color: var(--day-fix-color); }
         .holiday-label.early { color: var(--early-bird-color); }
+        .holiday-label.peak { color: var(--peak-color); }
 
         .stats-container {
             max-width: 1000px; margin: 40px auto 0 auto; background: white; padding: 25px;
             border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow-x: auto;
         }
 
-        .stats-container h3 { margin-top: 0; border-bottom: 2px solid var(--j-text); padding-bottom: 10px; }
+        .stats-container h3 { margin-top: 0; border-bottom: 2px solid var(--peak-color); padding-bottom: 10px; }
         
         .projection-table { width: 100%; border-collapse: collapse; margin-top: 15px; min-width: 800px; }
         .projection-table th, .projection-table td { border: 1px solid #e0e0e0; padding: 8px 10px; text-align: center; font-size: 0.9em; }
@@ -102,8 +105,8 @@
 <body>
 
     <div class="header">
-        <h1>Lake Schedule Logic Engine v15</h1>
-        <p style="color: #7f8c8d; margin-top: -10px;">The 3-Day Strict Minimum & Weekend Protection Anchor</p>
+        <h1>Lake Schedule Logic Engine v17</h1>
+        <p style="color: #7f8c8d; margin-top: -10px;">The 35-Day Peak Summer Super-Block</p>
     </div>
 
     <div class="controls">
@@ -116,6 +119,7 @@
         <div class="legend-item"><div class="color-box" style="background: var(--j-bg)"></div> J Full Day</div>
         <div class="legend-item"><div class="color-box" style="background: linear-gradient(135deg, var(--r-bg) 49%, #aaa 50%, var(--j-bg) 51%)"></div> Transfer</div>
         <div class="legend-item"><div class="color-box" style="border: 2px solid var(--override-color); background: white;"></div> Holiday Block</div>
+        <div class="legend-item"><div class="color-box" style="border: 2px solid var(--peak-color); background: white;"></div> Peak Wk</div>
         <div class="legend-item"><div class="color-box" style="border: 2px solid var(--early-bird-color); background: white;"></div> Early Bird</div>
         <div class="legend-item"><div class="color-box" style="border: 2px solid var(--cap-color); background: white;"></div> Wknd Gov</div>
         <div class="legend-item"><div class="color-box" style="border: 2px solid var(--day-fix-color); background: white;"></div> Day Eq.</div>
@@ -125,7 +129,7 @@
 
     <div class="stats-container">
         <h3>20-Year Proof Model (Anchored to 2024)</h3>
-        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>Transfers are strictly forbidden on Saturdays and Sundays. All blocks strictly enforced to a 3-night minimum.</em></p>
+        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>The 35-Day block alternates every year to keep the summer fair, while the Day Equalizer handles the slight day drift.</em></p>
         <table class="projection-table">
             <thead>
                 <tr>
@@ -167,20 +171,36 @@
         return addDays(d, offset + 7);
     }
     
-    // UPDATED: July 4th logic ensures it NEVER ends on a Sunday to prevent Sunday transfers
     function getJuly4Block(year) {
         let j4 = new Date(year, 6, 4);
         let s, e;
         switch(j4.getDay()) {
-            case 0: s = -2; e = 1; break; // Sun: Fri->Mon
-            case 1: s = -3; e = 1; break; // Mon: Fri->Tue
-            case 2: s = -4; e = 1; break; // Tue: Fri->Wed
-            case 3: s = -1; e = 5; break; // Wed: Tue->Mon (Extended to prevent Sun transfer)
-            case 4: s = -1; e = 4; break; // Thu: Wed->Mon (Extended to prevent Sun transfer)
-            case 5: s = -1; e = 3; break; // Fri: Thu->Mon
-            case 6: s = -1; e = 2; break; // Sat: Fri->Mon
+            case 0: s = -2; e = 1; break; 
+            case 1: s = -3; e = 1; break; 
+            case 2: s = -4; e = 1; break; 
+            case 3: s = -1; e = 5; break; 
+            case 4: s = -1; e = 4; break; 
+            case 5: s = -1; e = 3; break; 
+            case 6: s = -1; e = 2; break; 
         }
         return { start: addDays(j4, s), end: addDays(j4, e) };
+    }
+
+    // Mathematically structured 35-day block perfectly matching user's string
+    function getPeakSummer(year) {
+        let july1 = new Date(year, 6, 1);
+        let offset = july1.getDay() <= 5 ? 5 - july1.getDay() : 6;
+        let firstFriday = addDays(july1, offset);
+        let thirdFriday = addDays(firstFriday, 14);
+
+        let superStart = toUTC(addDays(thirdFriday, -4)); // Mon
+        let p1Start = toUTC(thirdFriday); // Fri
+        let p1End = toUTC(addDays(thirdFriday, 10)); // Mon
+        let midEnd = toUTC(addDays(thirdFriday, 17)); // Mon
+        let p2Start = toUTC(addDays(thirdFriday, 21)); // Fri
+        let superEnd = toUTC(addDays(thirdFriday, 31)); // Mon
+
+        return { superStart, p1Start, p1End, midEnd, p2Start, superEnd };
     }
 
     function getStrictBaseOwner(utcTime, year) {
@@ -193,7 +213,6 @@
         return (weeks % 2 === 0) ? firstBaseOwner : (firstBaseOwner === 'R' ? 'J' : 'R');
     }
 
-    // THE SWEEP: Eliminates any 1 or 2 night micro-blocks organically
     function cleanMicroBlocks(season, seasonStartUTC, seasonEndUTC) {
         let changed = true;
         let attempts = 0;
@@ -242,7 +261,6 @@
                     if (newOwner) {
                         for (let utc = blocks[i].start; utc <= blocks[i].end; utc += msPerDay) {
                             season.nights[utc] = newOwner;
-                            // Silently merge to keep calendar clean visually
                             if (season.labels[utc] === 'Day Eq.' || season.labels[utc] === 'Wknd Gov') {
                                 season.labels[utc] = null; 
                             }
@@ -262,9 +280,14 @@
         let colDay = getColumbusDay(year);
         let colStart = addDays(colDay, -3); 
         let j4 = getJuly4Block(year);
+        let peaks = getPeakSummer(year);
 
         let memLabOwner = (year % 2 === 0) ? 'R' : 'J';
         let j4ColOwner = (year % 2 === 0) ? 'J' : 'R';
+        
+        // Alternates every year to keep days fair. (Change memLabOwner to 'R' to lock Dad in forever)
+        let peak1Fam = memLabOwner; 
+        let peak2Fam = j4ColOwner;
 
         let j4Sat = new Date(j4.start);
         while (j4Sat.getDay() !== 6) j4Sat = addDays(j4Sat, 1);
@@ -286,13 +309,29 @@
             let label = null;
 
             if (utc >= seasonStartUTC && utc < toUTC(colDay)) {
-                if (isLateMemorialDay && utc >= earlyBirdStart && utc < anchor) {
-                    owner = j4ColOwner;
-                    label = 'Early Bird';
+                
+                // 1. The 35-Day Peak Super-Block
+                if (utc >= peaks.superStart && utc < peaks.superEnd) {
+                    if (utc < peaks.p1Start) {
+                        owner = peak2Fam; label = 'Peak 4';
+                    } else if (utc < peaks.p1End) {
+                        owner = peak1Fam; label = 'Peak 10';
+                    } else if (utc < peaks.midEnd) {
+                        owner = peak2Fam; label = 'Peak 7';
+                    } else if (utc < peaks.p2Start) {
+                        owner = peak1Fam; label = 'Peak 4';
+                    } else {
+                        owner = peak2Fam; label = 'Peak 10';
+                    }
+                } 
+                // 2. Early Bird / Memorial Week
+                else if (isLateMemorialDay && utc >= earlyBirdStart && utc < anchor) {
+                    owner = j4ColOwner; label = 'Early Bird';
                 } else if (utc >= anchor && utc < toUTC(memDay)) {
-                    owner = memLabOwner;
-                    label = 'Memorial Week';
-                } else {
+                    owner = memLabOwner; label = 'Memorial Week';
+                } 
+                // 3. Normal Base Rotation + Overrides
+                else {
                     let currentBaseOwner = getStrictBaseOwner(utc, year);
                     if (hasFlip && utc >= toUTC(flipDate)) {
                         currentBaseOwner = (currentBaseOwner === 'R') ? 'J' : 'R';
@@ -308,9 +347,7 @@
             if (label) season.labels[utc] = label;
         }
 
-        // Run the sweep to fix base/holiday overlap micro-blocks (like July 2029)
         cleanMicroBlocks(season, seasonStartUTC, toUTC(colDay));
-
         return season;
     }
 
@@ -349,7 +386,6 @@
         return { rDays, jDays, rSat, jSat };
     }
 
-    // Ensures we don't accidentally create a new micro-block when manually adjusting days
     function isValidFlip(season, testUtc, offendingFam, trailingFam, seasonStartUTC, seasonEndUTC) {
         let originalOwner = season.nights[testUtc];
         if (originalOwner !== offendingFam) return false;
@@ -405,12 +441,11 @@
                 let searchD = addDays(getColumbusDay(y), -7); 
                 
                 while (toUTC(searchD) > toUTC(getMemorialDay(y))) {
-                    if (searchD.getDay() === 0) { // Find Sunday
+                    if (searchD.getDay() === 0) { 
                         let sunUtc = toUTC(searchD);
                         let satUtc = sunUtc - msPerDay; 
                         let friUtc = satUtc - msPerDay;
                         
-                        // Grab Fri, Sat, Sun to perfectly prevent Sat/Sun transfers
                         if (season.nights[sunUtc] === offendingFam && season.nights[satUtc] === offendingFam && season.nights[friUtc] === offendingFam &&
                             !season.labels[sunUtc] && !season.labels[satUtc] && !season.labels[friUtc]) {
                             
@@ -432,7 +467,6 @@
             let currentDayDiff = stats.rDays - stats.jDays;
             let projectedDayDrift = runningDayDrift + currentDayDiff;
 
-            // Threshold relaxed to 3 days to allow natural floating without fragmentation
             while (projectedDayDrift > 3.0 || projectedDayDrift < -3.0) {
                 let offendingFam = projectedDayDrift > 0 ? 'R' : 'J';
                 let trailingFam = offendingFam === 'R' ? 'J' : 'R';
@@ -444,7 +478,6 @@
                     let utc = toUTC(searchD);
                     let dayOfWeek = searchD.getDay();
 
-                    // ONLY flip Mon, Tue, Wed, Thu nights to prevent Sat/Sun transfers entirely
                     if (dayOfWeek >= 1 && dayOfWeek <= 4) {
                         if (season.nights[utc] === offendingFam && !season.labels[utc]) {
                             if (isValidFlip(season, utc, offendingFam, trailingFam, seasonStartUTC, seasonEndUTC)) {
@@ -458,7 +491,7 @@
                     searchD = addDays(searchD, -1);
                 }
 
-                if (!flipped) break; // End if no safe flip found, carry debt to next year
+                if (!flipped) break; 
 
                 stats = calcStats(season, y);
                 currentDayDiff = stats.rDays - stats.jDays;
@@ -540,6 +573,7 @@
                     if (label === 'Wknd Gov') { labelClass = 'cap'; borderClass = 'cap-border'; }
                     if (label === 'Day Eq.') { labelClass = 'fix'; borderClass = 'fix-border'; }
                     if (label === 'Early Bird') { labelClass = 'early'; borderClass = 'early-border'; }
+                    if (label.includes('Peak')) { labelClass = 'peak'; borderClass = 'peak-border'; }
                     
                     innerHTML += `<div class="holiday-label ${labelClass}">${label}</div>`;
                     dayDiv.classList.add(borderClass);
