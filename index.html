@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lake Schedule Logic Engine v14 (The 3-Day Constraint)</title>
+    <title>Lake Schedule Logic Engine v15</title>
     <style>
         :root {
             --bg: #f4f7f6;
@@ -89,7 +89,7 @@
             border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow-x: auto;
         }
 
-        .stats-container h3 { margin-top: 0; border-bottom: 2px solid var(--day-fix-color); padding-bottom: 10px; }
+        .stats-container h3 { margin-top: 0; border-bottom: 2px solid var(--j-text); padding-bottom: 10px; }
         
         .projection-table { width: 100%; border-collapse: collapse; margin-top: 15px; min-width: 800px; }
         .projection-table th, .projection-table td { border: 1px solid #e0e0e0; padding: 8px 10px; text-align: center; font-size: 0.9em; }
@@ -102,8 +102,8 @@
 <body>
 
     <div class="header">
-        <h1>Lake Schedule Logic Engine v14</h1>
-        <p style="color: #7f8c8d; margin-top: -10px;">The Unbreakable 3-Day Block Constraint</p>
+        <h1>Lake Schedule Logic Engine v15</h1>
+        <p style="color: #7f8c8d; margin-top: -10px;">The 3-Day Strict Minimum & Weekend Protection Anchor</p>
     </div>
 
     <div class="controls">
@@ -125,7 +125,7 @@
 
     <div class="stats-container">
         <h3>20-Year Proof Model (Anchored to 2024)</h3>
-        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>Day Equalizer will now carry drift to the next year if a 3-day block minimum cannot be maintained.</em></p>
+        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>Transfers are strictly forbidden on Saturdays and Sundays. All blocks strictly enforced to a 3-night minimum.</em></p>
         <table class="projection-table">
             <thead>
                 <tr>
@@ -166,17 +166,19 @@
         let offset = d.getDay() === 1 ? 0 : (d.getDay() === 0 ? 1 : 8 - d.getDay());
         return addDays(d, offset + 7);
     }
+    
+    // UPDATED: July 4th logic ensures it NEVER ends on a Sunday to prevent Sunday transfers
     function getJuly4Block(year) {
         let j4 = new Date(year, 6, 4);
         let s, e;
         switch(j4.getDay()) {
-            case 0: s = -2; e = 1; break; 
-            case 1: s = -3; e = 1; break; 
-            case 2: s = -4; e = 1; break; 
-            case 3: s = -1; e = 4; break; 
-            case 4: s = -1; e = 3; break; 
-            case 5: s = -1; e = 3; break; 
-            case 6: s = -1; e = 2; break; 
+            case 0: s = -2; e = 1; break; // Sun: Fri->Mon
+            case 1: s = -3; e = 1; break; // Mon: Fri->Tue
+            case 2: s = -4; e = 1; break; // Tue: Fri->Wed
+            case 3: s = -1; e = 5; break; // Wed: Tue->Mon (Extended to prevent Sun transfer)
+            case 4: s = -1; e = 4; break; // Thu: Wed->Mon (Extended to prevent Sun transfer)
+            case 5: s = -1; e = 3; break; // Fri: Thu->Mon
+            case 6: s = -1; e = 2; break; // Sat: Fri->Mon
         }
         return { start: addDays(j4, s), end: addDays(j4, e) };
     }
@@ -189,6 +191,67 @@
         let diff = Math.floor((utcTime - anchor) / msPerDay);
         let weeks = Math.floor(diff / 7);
         return (weeks % 2 === 0) ? firstBaseOwner : (firstBaseOwner === 'R' ? 'J' : 'R');
+    }
+
+    // THE SWEEP: Eliminates any 1 or 2 night micro-blocks organically
+    function cleanMicroBlocks(season, seasonStartUTC, seasonEndUTC) {
+        let changed = true;
+        let attempts = 0;
+
+        while (changed && attempts < 4) {
+            changed = false;
+            attempts++;
+
+            let bounds = Object.keys(season.nights).map(Number).sort((a,b)=>a-b);
+            let blocks = [];
+            let currentOwner = null;
+            let blockStart = null;
+
+            for (let i = 0; i < bounds.length; i++) {
+                let utc = bounds[i];
+                if (utc >= seasonStartUTC && utc <= seasonEndUTC) {
+                    if (season.nights[utc] !== currentOwner) {
+                        if (currentOwner !== null) {
+                            blocks.push({ start: blockStart, end: bounds[i-1], owner: currentOwner, length: (bounds[i-1] - blockStart)/msPerDay + 1 });
+                        }
+                        currentOwner = season.nights[utc];
+                        blockStart = utc;
+                    }
+                }
+            }
+            if (currentOwner !== null && blockStart <= seasonEndUTC) {
+                 blocks.push({ start: blockStart, end: seasonEndUTC, owner: currentOwner, length: (seasonEndUTC - blockStart)/msPerDay + 1 });
+            }
+
+            for (let i = 0; i < blocks.length; i++) {
+                if (blocks[i].length < 3) {
+                    let leftOwner = i > 0 ? blocks[i-1].owner : null;
+                    let rightOwner = i < blocks.length - 1 ? blocks[i+1].owner : null;
+
+                    let newOwner = null;
+                    if (leftOwner === rightOwner && leftOwner !== null) {
+                        newOwner = leftOwner;
+                    } else if (leftOwner !== null && rightOwner !== null) {
+                        newOwner = blocks[i-1].length >= blocks[i+1].length ? leftOwner : rightOwner;
+                    } else if (leftOwner !== null) {
+                        newOwner = leftOwner;
+                    } else if (rightOwner !== null) {
+                        newOwner = rightOwner;
+                    }
+
+                    if (newOwner) {
+                        for (let utc = blocks[i].start; utc <= blocks[i].end; utc += msPerDay) {
+                            season.nights[utc] = newOwner;
+                            // Silently merge to keep calendar clean visually
+                            if (season.labels[utc] === 'Day Eq.' || season.labels[utc] === 'Wknd Gov') {
+                                season.labels[utc] = null; 
+                            }
+                        }
+                        changed = true;
+                    }
+                }
+            }
+        }
     }
 
     function generateNaturalSeason(year) {
@@ -244,6 +307,10 @@
             season.nights[utc] = owner;
             if (label) season.labels[utc] = label;
         }
+
+        // Run the sweep to fix base/holiday overlap micro-blocks (like July 2029)
+        cleanMicroBlocks(season, seasonStartUTC, toUTC(colDay));
+
         return season;
     }
 
@@ -282,45 +349,30 @@
         return { rDays, jDays, rSat, jSat };
     }
 
-    // Helper: Validates that flipping a day won't create a micro-block (< 3 days)
+    // Ensures we don't accidentally create a new micro-block when manually adjusting days
     function isValidFlip(season, testUtc, offendingFam, trailingFam, seasonStartUTC, seasonEndUTC) {
         let originalOwner = season.nights[testUtc];
         if (originalOwner !== offendingFam) return false;
 
-        // Temporarily apply the flip
         season.nights[testUtc] = trailingFam;
-
         let valid = true;
 
-        // Check the left-side remainder block of the offending family
-        let leftUtc = testUtc - msPerDay;
-        if (season.nights[leftUtc] === offendingFam) {
-            let len = 0;
-            let cur = leftUtc;
-            while (season.nights[cur] === offendingFam && cur >= seasonStartUTC) { len++; cur -= msPerDay; }
-            if (len < 3) valid = false;
-        }
+        let checkBlockLen = (utcStart, owner, step) => {
+            let len = 0, cur = utcStart;
+            while (season.nights[cur] === owner && cur >= seasonStartUTC && cur <= seasonEndUTC) { 
+                len++; cur += step; 
+            }
+            return len;
+        };
 
-        // Check the right-side remainder block of the offending family
-        let rightUtc = testUtc + msPerDay;
-        if (valid && season.nights[rightUtc] === offendingFam) {
-            let len = 0;
-            let cur = rightUtc;
-            while (season.nights[cur] === offendingFam && cur <= seasonEndUTC) { len++; cur += msPerDay; }
-            if (len < 3) valid = false;
-        }
-
-        // Check the newly expanded block of the trailing family
+        if (season.nights[testUtc - msPerDay] === offendingFam && checkBlockLen(testUtc - msPerDay, offendingFam, -msPerDay) < 3) valid = false;
+        if (valid && season.nights[testUtc + msPerDay] === offendingFam && checkBlockLen(testUtc + msPerDay, offendingFam, msPerDay) < 3) valid = false;
+        
         if (valid) {
-            let len = 0;
-            let cur = testUtc;
-            while (season.nights[cur] === trailingFam && cur >= seasonStartUTC) { len++; cur -= msPerDay; }
-            cur = testUtc + msPerDay;
-            while (season.nights[cur] === trailingFam && cur <= seasonEndUTC) { len++; cur += msPerDay; }
-            if (len < 3) valid = false;
+            let expandedLen = checkBlockLen(testUtc, trailingFam, -msPerDay) + checkBlockLen(testUtc + msPerDay, trailingFam, msPerDay);
+            if (expandedLen < 3) valid = false;
         }
 
-        // Revert the temporary flip
         season.nights[testUtc] = originalOwner;
         return valid;
     }
@@ -336,6 +388,12 @@
             let season = generateNaturalSeason(y);
             let stats = calcStats(season, y);
             
+            let memDay = getMemorialDay(y);
+            let anchor = toUTC(addDays(memDay, -7));
+            let isLateMemorialDay = memDay.getDate() >= 28;
+            let seasonStartUTC = isLateMemorialDay ? toUTC(addDays(new Date(anchor), -3)) : anchor;
+            let seasonEndUTC = toUTC(getColumbusDay(y));
+
             // --- 1. THE WEEKEND GOVERNOR ---
             let currentSatDiff = stats.rSat - stats.jSat;
             let projectedSatDrift = runningSatDrift + currentSatDiff;
@@ -344,54 +402,51 @@
                 let offendingFam = projectedSatDrift >= 2 ? 'R' : 'J';
                 let trailingFam = offendingFam === 'R' ? 'J' : 'R';
                 
-                let colDay = getColumbusDay(y);
-                let d = addDays(colDay, -7); 
+                let searchD = addDays(getColumbusDay(y), -7); 
                 
-                while (toUTC(d) > toUTC(getMemorialDay(y))) {
-                    if (d.getDay() === 6) { 
-                        let satUtc = toUTC(d);
-                        let friUtc = satUtc - msPerDay; 
+                while (toUTC(searchD) > toUTC(getMemorialDay(y))) {
+                    if (searchD.getDay() === 0) { // Find Sunday
+                        let sunUtc = toUTC(searchD);
+                        let satUtc = sunUtc - msPerDay; 
+                        let friUtc = satUtc - msPerDay;
                         
-                        if (season.nights[satUtc] === offendingFam && !season.labels[satUtc]) {
+                        // Grab Fri, Sat, Sun to perfectly prevent Sat/Sun transfers
+                        if (season.nights[sunUtc] === offendingFam && season.nights[satUtc] === offendingFam && season.nights[friUtc] === offendingFam &&
+                            !season.labels[sunUtc] && !season.labels[satUtc] && !season.labels[friUtc]) {
+                            
                             season.nights[friUtc] = trailingFam;
                             season.nights[satUtc] = trailingFam;
+                            season.nights[sunUtc] = trailingFam;
                             season.labels[friUtc] = 'Wknd Gov';
                             season.labels[satUtc] = 'Wknd Gov';
+                            season.labels[sunUtc] = 'Wknd Gov';
                             break; 
                         }
                     }
-                    d = addDays(d, -1);
+                    searchD = addDays(searchD, -1);
                 }
                 stats = calcStats(season, y);
             }
 
-            // --- 2. THE WEEKDAY SHOCK ABSORBER (WITH 3-DAY SAFEGUARD) ---
+            // --- 2. THE WEEKDAY SHOCK ABSORBER (STRICT 3-DAY SAFEGUARD) ---
             let currentDayDiff = stats.rDays - stats.jDays;
             let projectedDayDrift = runningDayDrift + currentDayDiff;
-            
-            let memDay = getMemorialDay(y);
-            let anchor = toUTC(addDays(memDay, -7));
-            let isLateMemorialDay = memDay.getDate() >= 28;
-            let seasonStartUTC = isLateMemorialDay ? toUTC(addDays(new Date(anchor), -3)) : anchor;
-            let seasonEndUTC = toUTC(getColumbusDay(y));
 
-            while (projectedDayDrift > 1.5 || projectedDayDrift < -1.5) {
+            // Threshold relaxed to 3 days to allow natural floating without fragmentation
+            while (projectedDayDrift > 3.0 || projectedDayDrift < -3.0) {
                 let offendingFam = projectedDayDrift > 0 ? 'R' : 'J';
                 let trailingFam = offendingFam === 'R' ? 'J' : 'R';
                 let flipped = false;
 
-                let colDay = getColumbusDay(y);
-                let searchD = addDays(colDay, -7);
+                let searchD = addDays(getColumbusDay(y), -7);
 
                 while (toUTC(searchD) > toUTC(new Date(y, 8, 1))) { 
                     let utc = toUTC(searchD);
                     let dayOfWeek = searchD.getDay();
 
-                    // Focus on non-weekends that don't have existing holiday/governor labels
-                    if (dayOfWeek !== 5 && dayOfWeek !== 6) {
+                    // ONLY flip Mon, Tue, Wed, Thu nights to prevent Sat/Sun transfers entirely
+                    if (dayOfWeek >= 1 && dayOfWeek <= 4) {
                         if (season.nights[utc] === offendingFam && !season.labels[utc]) {
-                            
-                            // Prevent micro-blocks (must leave blocks >= 3 days)
                             if (isValidFlip(season, utc, offendingFam, trailingFam, seasonStartUTC, seasonEndUTC)) {
                                 season.nights[utc] = trailingFam;
                                 season.labels[utc] = 'Day Eq.';
@@ -403,9 +458,7 @@
                     searchD = addDays(searchD, -1);
                 }
 
-                // If we iterated through September and couldn't find a safe day to flip, we stop! 
-                // The math naturally defers to the next year.
-                if (!flipped) break; 
+                if (!flipped) break; // End if no safe flip found, carry debt to next year
 
                 stats = calcStats(season, y);
                 currentDayDiff = stats.rDays - stats.jDays;
