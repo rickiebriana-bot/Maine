@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lake Schedule Logic Engine v19</title>
+    <title>Lake Schedule Logic Engine v20</title>
     <style>
         :root {
             --bg: #f4f7f6;
@@ -105,8 +105,8 @@
 <body>
 
     <div class="header">
-        <h1>Lake Schedule Logic Engine v19</h1>
-        <p style="color: #7f8c8d; margin-top: -10px;">The 14-Day Symmetrical Splice</p>
+        <h1>Lake Schedule Logic Engine v20</h1>
+        <p style="color: #7f8c8d; margin-top: -10px;">The 14-Day Phase-Synced Splice</p>
     </div>
 
     <div class="controls">
@@ -129,7 +129,7 @@
 
     <div class="stats-container">
         <h3>20-Year Proof Model (Anchored to 2024)</h3>
-        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>The 14-day stints seamlessly splice into the rotation without altering parity or creating day debt.</em></p>
+        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>The 14-day stints perfectly read the July 4th shifts, guaranteeing no mega-streaks.</em></p>
         <table class="projection-table">
             <thead>
                 <tr>
@@ -281,16 +281,19 @@
 
         let memLabOwner = (year % 2 === 0) ? 'R' : 'J';
         let j4ColOwner = (year % 2 === 0) ? 'J' : 'R';
-        
-        // Dynamically assigns Peak 1 to whoever normally holds that week
-        let peak1Fam = getStrictBaseOwner(peaks.peak1Start, year); 
-        let peak2Fam = (peak1Fam === 'R') ? 'J' : 'R';
 
         let j4Sat = new Date(j4.start);
         while (j4Sat.getDay() !== 6) j4Sat = addDays(j4Sat, 1);
         const originalSatOwner = getStrictBaseOwner(toUTC(j4Sat), year);
         const hasFlip = (j4ColOwner !== originalSatOwner); 
         const flipDate = addDays(j4Sat, 2); 
+        
+        // Context-Aware Assignment: Check natural owner AND apply July 4th flip if necessary
+        let peak1Fam = getStrictBaseOwner(peaks.peak1Start, year); 
+        if (hasFlip && peaks.peak1Start >= toUTC(flipDate)) {
+            peak1Fam = (peak1Fam === 'R') ? 'J' : 'R';
+        }
+        let peak2Fam = (peak1Fam === 'R') ? 'J' : 'R';
 
         let season = { nights: {}, labels: {} };
         
