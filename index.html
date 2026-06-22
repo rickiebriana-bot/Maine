@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lake Schedule Logic Engine v17</title>
+    <title>Lake Schedule Logic Engine v19</title>
     <style>
         :root {
             --bg: #f4f7f6;
@@ -67,7 +67,7 @@
         .day.cap-border { box-shadow: inset 0 0 0 2.5px var(--cap-color); }
         .day.fix-border { box-shadow: inset 0 0 0 2.5px var(--day-fix-color); }
         .day.early-border { box-shadow: inset 0 0 0 2px var(--early-bird-color); }
-        .day.peak-border { box-shadow: inset 0 0 0 2px var(--peak-color); }
+        .day.peak-border { box-shadow: inset 0 0 0 2.5px var(--peak-color); }
 
         .day-number { position: absolute; top: 4px; left: 6px; font-size: 0.75em; color: #555; z-index: 2; }
 
@@ -105,8 +105,8 @@
 <body>
 
     <div class="header">
-        <h1>Lake Schedule Logic Engine v17</h1>
-        <p style="color: #7f8c8d; margin-top: -10px;">The 35-Day Peak Summer Super-Block</p>
+        <h1>Lake Schedule Logic Engine v19</h1>
+        <p style="color: #7f8c8d; margin-top: -10px;">The 14-Day Symmetrical Splice</p>
     </div>
 
     <div class="controls">
@@ -119,7 +119,7 @@
         <div class="legend-item"><div class="color-box" style="background: var(--j-bg)"></div> J Full Day</div>
         <div class="legend-item"><div class="color-box" style="background: linear-gradient(135deg, var(--r-bg) 49%, #aaa 50%, var(--j-bg) 51%)"></div> Transfer</div>
         <div class="legend-item"><div class="color-box" style="border: 2px solid var(--override-color); background: white;"></div> Holiday Block</div>
-        <div class="legend-item"><div class="color-box" style="border: 2px solid var(--peak-color); background: white;"></div> Peak Wk</div>
+        <div class="legend-item"><div class="color-box" style="border: 2.5px solid var(--peak-color); background: white;"></div> 14-Day Block</div>
         <div class="legend-item"><div class="color-box" style="border: 2px solid var(--early-bird-color); background: white;"></div> Early Bird</div>
         <div class="legend-item"><div class="color-box" style="border: 2px solid var(--cap-color); background: white;"></div> Wknd Gov</div>
         <div class="legend-item"><div class="color-box" style="border: 2px solid var(--day-fix-color); background: white;"></div> Day Eq.</div>
@@ -129,7 +129,7 @@
 
     <div class="stats-container">
         <h3>20-Year Proof Model (Anchored to 2024)</h3>
-        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>The 35-Day block alternates every year to keep the summer fair, while the Day Equalizer handles the slight day drift.</em></p>
+        <p style="font-size: 0.85em; color: #666; margin-top: -5px;"><em>The 14-day stints seamlessly splice into the rotation without altering parity or creating day debt.</em></p>
         <table class="projection-table">
             <thead>
                 <tr>
@@ -186,21 +186,18 @@
         return { start: addDays(j4, s), end: addDays(j4, e) };
     }
 
-    // Mathematically structured 35-day block perfectly matching user's string
+    // Identifies the 2nd to last Monday in July for the 14-day stints
     function getPeakSummer(year) {
-        let july1 = new Date(year, 6, 1);
-        let offset = july1.getDay() <= 5 ? 5 - july1.getDay() : 6;
-        let firstFriday = addDays(july1, offset);
-        let thirdFriday = addDays(firstFriday, 14);
+        let july31 = new Date(year, 6, 31);
+        let offset = july31.getDay() === 0 ? 6 : july31.getDay() - 1;
+        let lastMonday = addDays(july31, -offset);
+        
+        let peak1Start = toUTC(addDays(lastMonday, -7)); // 2nd to last Monday
+        let peak1End = peak1Start + (14 * msPerDay);
+        let peak2Start = peak1End;
+        let peak2End = peak2Start + (14 * msPerDay);
 
-        let superStart = toUTC(addDays(thirdFriday, -4)); // Mon
-        let p1Start = toUTC(thirdFriday); // Fri
-        let p1End = toUTC(addDays(thirdFriday, 10)); // Mon
-        let midEnd = toUTC(addDays(thirdFriday, 17)); // Mon
-        let p2Start = toUTC(addDays(thirdFriday, 21)); // Fri
-        let superEnd = toUTC(addDays(thirdFriday, 31)); // Mon
-
-        return { superStart, p1Start, p1End, midEnd, p2Start, superEnd };
+        return { peak1Start, peak1End, peak2Start, peak2End };
     }
 
     function getStrictBaseOwner(utcTime, year) {
@@ -285,9 +282,9 @@
         let memLabOwner = (year % 2 === 0) ? 'R' : 'J';
         let j4ColOwner = (year % 2 === 0) ? 'J' : 'R';
         
-        // Alternates every year to keep days fair. (Change memLabOwner to 'R' to lock Dad in forever)
-        let peak1Fam = memLabOwner; 
-        let peak2Fam = j4ColOwner;
+        // Dynamically assigns Peak 1 to whoever normally holds that week
+        let peak1Fam = getStrictBaseOwner(peaks.peak1Start, year); 
+        let peak2Fam = (peak1Fam === 'R') ? 'J' : 'R';
 
         let j4Sat = new Date(j4.start);
         while (j4Sat.getDay() !== 6) j4Sat = addDays(j4Sat, 1);
@@ -310,19 +307,13 @@
 
             if (utc >= seasonStartUTC && utc < toUTC(colDay)) {
                 
-                // 1. The 35-Day Peak Super-Block
-                if (utc >= peaks.superStart && utc < peaks.superEnd) {
-                    if (utc < peaks.p1Start) {
-                        owner = peak2Fam; label = 'Peak 4';
-                    } else if (utc < peaks.p1End) {
-                        owner = peak1Fam; label = 'Peak 10';
-                    } else if (utc < peaks.midEnd) {
-                        owner = peak2Fam; label = 'Peak 7';
-                    } else if (utc < peaks.p2Start) {
-                        owner = peak1Fam; label = 'Peak 4';
-                    } else {
-                        owner = peak2Fam; label = 'Peak 10';
-                    }
+                // 1. The 14-Day Stints
+                if (utc >= peaks.peak1Start && utc < peaks.peak2Start) {
+                    owner = peak1Fam;
+                    label = '14-Day Blk';
+                } else if (utc >= peaks.peak2Start && utc < peaks.peak2End) {
+                    owner = peak2Fam;
+                    label = '14-Day Blk';
                 } 
                 // 2. Early Bird / Memorial Week
                 else if (isLateMemorialDay && utc >= earlyBirdStart && utc < anchor) {
@@ -573,7 +564,7 @@
                     if (label === 'Wknd Gov') { labelClass = 'cap'; borderClass = 'cap-border'; }
                     if (label === 'Day Eq.') { labelClass = 'fix'; borderClass = 'fix-border'; }
                     if (label === 'Early Bird') { labelClass = 'early'; borderClass = 'early-border'; }
-                    if (label.includes('Peak')) { labelClass = 'peak'; borderClass = 'peak-border'; }
+                    if (label.includes('14-Day')) { labelClass = 'peak'; borderClass = 'peak-border'; }
                     
                     innerHTML += `<div class="holiday-label ${labelClass}">${label}</div>`;
                     dayDiv.classList.add(borderClass);
